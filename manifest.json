@@ -1,0 +1,90 @@
+{
+  "name": "Google Analytics [BETA]",
+  "tags": ["outgoing", "oneColumn", "batch", "smart-notifier"],
+  "description": "Obtain Google Analytics Data to enrich Hull User Profiles",
+  "readme": "readme.md",
+  "tabs": [],
+  "version": "0.1.0",
+  "source": "google-analytics",
+  "logo": "logo.png",
+  "picture": "picture.png",
+  "ui": false,
+  "settings": [],
+  "private_settings": [
+    {
+      "name": "json_key",
+      "type": "string",
+      "title": "JSON Key",
+      "description": "The JSON key for your service account."
+    },
+    {
+      "name": "view_id",
+      "type": "string",
+      "title": "View ID",
+      "description": "The View ID of your Google Analytics account."
+    },
+    {
+      "name": "lookup_anonymous_ids_enabled",
+      "type": "boolean",
+      "title": "Parse anonymous identifiers?",
+      "description": "Use client IDs stored in anonymous ids of the user.",
+      "default": false
+    },
+    {
+      "name": "lookup_anonymous_ids_prefix",
+      "type": "string",
+      "title": "Prefix for anonymous identifiers",
+      "description": "Specify the prefix which indicates a client ID, if any."
+    },
+    {
+      "name": "lookup_attribute",
+      "type": "string",
+      "format": "trait",
+      "title": "Lookup attribute",
+      "description": "Select the attribute which contains the Client ID or IDs, if any."
+    },
+    {
+      "name": "user_synchronized_segments",
+      "title": "User Filter",
+      "description": "Synchronize Hull Users to your SQL database when they are part of one of these segments.",
+      "type": "array",
+      "format": "segment",
+      "default": [],
+      "options": {
+        "standard": {
+          "ALL": "All Users"
+        }
+      }
+    }
+  ],
+  "json": [],
+  "schedules": [
+    {
+      "url": "/status",
+      "type": "interval",
+      "value": "30"
+    }
+  ],
+  "subscriptions": [
+    {
+      "url": "/smart-notifier"
+    }
+  ],
+  "settings_sections": [
+    {
+      "title": "Authentication",
+      "description": "Configure the parameters to establish a connection with Google Analytics.",
+      "properties": ["private_settings.json_key", "private_settings.view_id"]
+    },
+    {
+      "title": "Data Flow",
+      "description": "Define which Hull Users are enriched with Google Analytics data.",
+      "properties": [
+        "private_settings.user_synchronized_segments",
+        "private_settings.lookup_anonymous_ids_enabled",
+        "private_settings.lookup_anonymous_ids_prefix",
+        "private_settings.lookup_attribute"
+      ]
+    }
+  ]
+}
