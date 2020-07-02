@@ -191,10 +191,7 @@ export class SyncAgent {
 
       if (envelopesToEnrich.length === 0) {
         logger.debug(
-          `No messages containing any client identifiers to enrich from Google Analytics. Skipping further processing.`,
-        );
-        console.log(
-          `No messages containing any client identifiers to enrich from Google Analytics. Skipping further processing.`,
+          `No messages containing any client identifiers to enrich from Google Analytics or all users have been enriched within the past 30 minutes. Skipping further processing.`,
         );
         return Promise.resolve(true);
       }

@@ -234,8 +234,18 @@ export class ConnectorRedisClient {
               return resolve(undefined);
             }
 
-            const data = JSON.parse(result) as T;
-            return resolve(data);
+            let data = result as unknown;
+            try {
+              data = JSON.parse(result) as T;
+            } catch (error) {
+              this.logger.debug({
+                message: "Failed to parse result to JSON",
+                meta: logMeta,
+                details: error,
+              });
+            }
+
+            return resolve(data as T);
           },
         );
       },
