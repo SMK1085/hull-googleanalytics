@@ -43,4 +43,45 @@ export class ServiceClient {
     this.logger.debug("Retrieved data from user activity search", result.data);
     return result.data;
   }
+
+  public async listCustomDimensions(
+    accountId: string,
+    webPropertyId: string,
+  ): Promise<unknown> {
+    const auth = new google.auth.GoogleAuth({
+      keyFile: `./temp/${this.connectorId}.auth.json`,
+      scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
+    });
+
+    google.options({ auth });
+
+    const result = await google
+      .analytics("v3")
+      .management.customDimensions.list({
+        accountId,
+        webPropertyId,
+      });
+    this.logger.debug("Retrieved data for custom dimensions", result.data);
+    return result.data;
+  }
+
+  public async listProfiles(
+    accountId: string,
+    webPropertyId: string,
+  ): Promise<unknown> {
+    const auth = new google.auth.GoogleAuth({
+      keyFile: `./temp/${this.connectorId}.auth.json`,
+      scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
+    });
+
+    google.options({ auth });
+
+    const result = await google.analytics("v3").management.profiles.list({
+      accountId,
+      webPropertyId,
+    });
+
+    this.logger.debug("Retrieved data for profiles", result.data);
+    return result.data;
+  }
 }

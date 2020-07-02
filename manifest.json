@@ -10,8 +10,7 @@
   "picture": "picture.png",
   "ui": false,
   "settings": [],
-  "private_settings": [
-    {
+  "private_settings": [{
       "name": "json_key",
       "type": "string",
       "title": "JSON Key",
@@ -22,6 +21,18 @@
       "type": "string",
       "title": "View ID",
       "description": "The View ID of your Google Analytics account."
+    },
+    {
+      "name": "account_id",
+      "type": "string",
+      "title": "Account ID",
+      "description": "The Account ID of your Google Analytics account."
+    },
+    {
+      "name": "webproperty_id",
+      "type": "string",
+      "title": "Web Property ID",
+      "description": "The Web Property ID of your Google Analytics account."
     },
     {
       "name": "lookup_anonymous_ids_enabled",
@@ -58,23 +69,23 @@
     }
   ],
   "json": [],
-  "schedules": [
-    {
-      "url": "/status",
-      "type": "interval",
-      "value": "30"
-    }
-  ],
-  "subscriptions": [
-    {
-      "url": "/smart-notifier"
-    }
-  ],
-  "settings_sections": [
-    {
+  "schedules": [{
+    "url": "/status",
+    "type": "interval",
+    "value": "30"
+  }],
+  "subscriptions": [{
+    "url": "/smart-notifier"
+  }],
+  "settings_sections": [{
       "title": "Authentication",
       "description": "Configure the parameters to establish a connection with Google Analytics.",
-      "properties": ["private_settings.json_key", "private_settings.view_id"]
+      "properties": [
+        "private_settings.json_key",
+        "private_settings.view_id",
+        "private_settings.account_id",
+        "private_settings.webproperty_id"
+      ]
     },
     {
       "title": "Data Flow",

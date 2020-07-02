@@ -12,11 +12,16 @@ import {
   OutgoingOperationEnvelope,
   GoogleAnalyticsUserActivityRequestData,
 } from "./service-objects";
-import { VALIDATION_SKIP_HULLUSER_NOCLIENTIDS } from "./messages";
+import {
+  VALIDATION_SKIP_HULLUSER_NOCLIENTIDS,
+  VALIDATION_SKIP_HULLUSER_RECENTUAS,
+} from "./messages";
 import asyncForEach from "../utils/async-foreach";
 import path from "path";
 import { isDirAsync, mkDirAsync, saveFileToDisk } from "../utils/filesystem";
 import { writeFile } from "fs";
+import { ConnectorRedisClient } from "../utils/redis-client";
+import { DateTime } from "luxon";
 
 export class SyncAgent {
   readonly hullClient: IHullClient;
@@ -115,6 +120,9 @@ export class SyncAgent {
       }
 
       const mappingUtil = this.diContainer.resolve<MappingUtil>("mappingUtil");
+      const redisClient = this.diContainer.resolve<ConnectorRedisClient>(
+        "redisClient",
+      );
 
       const envelopesNotProcessable: OutgoingOperationEnvelope<
         IHullUserUpdateMessage,
@@ -126,23 +134,49 @@ export class SyncAgent {
         GoogleAnalyticsUserActivityRequestData
       >[] = [];
 
-      _.forEach(envelopesFiltered.enrichs, (envelope) => {
-        const serviceData = mappingUtil.mapHullUserToGoogleAnalyticsAcitivityRequestData(
-          envelope.message.user,
-        );
-        if (serviceData) {
-          envelopesToEnrich.push({
-            ...envelope,
-            serviceObject: serviceData,
-          });
-        } else {
-          envelopesNotProcessable.push({
-            ...envelope,
-            operation: "skip",
-            notes: [VALIDATION_SKIP_HULLUSER_NOCLIENTIDS],
-          });
-        }
-      });
+      await asyncForEach(
+        envelopesFiltered.enrichs,
+        async (
+          envelope: OutgoingOperationEnvelope<
+            IHullUserUpdateMessage,
+            GoogleAnalyticsUserActivityRequestData
+          >,
+        ) => {
+          const serviceData = mappingUtil.mapHullUserToGoogleAnalyticsAcitivityRequestData(
+            envelope.message.user,
+          );
+          const lastUserActivitySearch = await redisClient.get<string>(
+            `${this.hullConnector.id}__${envelope.message.user.id}__uas`,
+          );
+
+          let isSkippedRecentSearch = false;
+          if (lastUserActivitySearch) {
+            if (
+              DateTime.fromISO(lastUserActivitySearch) >=
+              DateTime.utc().minus({ minutes: 30 })
+            ) {
+              envelopesNotProcessable.push({
+                ...envelope,
+                operation: "skip",
+                notes: [VALIDATION_SKIP_HULLUSER_RECENTUAS],
+              });
+              isSkippedRecentSearch = true;
+            }
+          }
+          if (serviceData && !isSkippedRecentSearch) {
+            envelopesToEnrich.push({
+              ...envelope,
+              serviceObject: serviceData,
+            });
+          } else if (!isSkippedRecentSearch) {
+            envelopesNotProcessable.push({
+              ...envelope,
+              operation: "skip",
+              notes: [VALIDATION_SKIP_HULLUSER_NOCLIENTIDS],
+            });
+          }
+        },
+      );
 
       envelopesNotProcessable.forEach((envelope) => {
         this.hullClient
@@ -203,6 +237,13 @@ export class SyncAgent {
                 console.log(ingestionResult);
               },
             );
+
+            // Store in REDIS the last time the user was queried
+            await redisClient.set(
+              `${this.hullConnector.id}__${envelope.message.user.id}__uas`,
+              DateTime.utc().toISO(),
+              30 * 60,
+            );
           }
         },
       );
@@ -223,6 +264,29 @@ export class SyncAgent {
       status: "ok",
       messages: [],
     };
+
+    const logger = this.diContainer.resolve<Logger>("logger");
+    if (
+      this.privateSettings.account_id &&
+      this.privateSettings.webproperty_id
+    ) {
+      try {
+        await this.ensureKeyFile();
+
+        const serviceClient = this.diContainer.resolve<ServiceClient>(
+          "serviceClient",
+        );
+
+        const customDimensions = await serviceClient.listProfiles(
+          "34606920",
+          "UA-34606920-1",
+        );
+        logger.debug("Retrieved profiles", customDimensions);
+      } catch (error) {
+        console.log(error);
+        logger.error("Failed to retrieve profiles", { error });
+      }
+    }
 
     return Promise.resolve(statusResult);
   }
