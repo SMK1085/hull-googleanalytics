@@ -32,6 +32,7 @@ export class MappingUtil {
     const clientIdRegex = /^GA\d\.\d\.\d*\.\d*/;
     const result: GoogleAnalyticsUserActivityRequestData = {
       clientIdentifiers: [],
+      userIdentifiers: [],
       startDate: DateTime.utc().minus({ days: 2 }),
       endDate: DateTime.utc(),
     };
@@ -93,7 +94,29 @@ export class MappingUtil {
       }
     }
 
-    if (result.clientIdentifiers.length !== 0) {
+    if (this.privateSettings.lookup_attribute_userid) {
+      const rawValue = get(
+        user,
+        this.privateSettings.lookup_attribute_userid,
+        undefined,
+      );
+      if (rawValue !== undefined) {
+        if (isArray(rawValue)) {
+          rawValue.forEach((r) => {
+            if (isString(r)) {
+              result.userIdentifiers.push(r);
+            }
+          });
+        } else if (isString(rawValue)) {
+          result.userIdentifiers.push(rawValue);
+        }
+      }
+    }
+
+    if (
+      result.clientIdentifiers.length !== 0 ||
+      result.userIdentifiers.length !== 0
+    ) {
       return result;
     }
 

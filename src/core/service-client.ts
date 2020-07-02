@@ -2,6 +2,13 @@ import { google, analyticsreporting_v4 } from "googleapis";
 import { PrivateSettings } from "./connector";
 import { Logger } from "winston";
 import { DateTime } from "luxon";
+import {
+  GoogleAnalyticsUserIdType,
+  ApiMethod,
+  ApiResultObject,
+} from "./service-objects";
+import { ApiUtil } from "../utils/api-util";
+import { GaxiosError } from "gaxios";
 
 export class ServiceClient {
   readonly privateSettings: PrivateSettings;
@@ -18,19 +25,20 @@ export class ServiceClient {
     userId: string,
     startDate: DateTime,
     endDate: DateTime,
-  ): Promise<analyticsreporting_v4.Schema$SearchUserActivityResponse> {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: `./temp/${this.connectorId}.auth.json`,
-      scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
-    });
-
-    google.options({ auth });
-
-    const result = await google.analyticsreporting("v4").userActivity.search({
+    userIdType: GoogleAnalyticsUserIdType = "CLIENT_ID",
+  ): Promise<
+    ApiResultObject<
+      analyticsreporting_v4.Params$Resource$Useractivity$Search,
+      analyticsreporting_v4.Schema$SearchUserActivityResponse | undefined
+    >
+  > {
+    const url = `https://analyticsreporting.googleapis.com/v4/userActivity:search`;
+    const method: ApiMethod = "query";
+    const payload: analyticsreporting_v4.Params$Resource$Useractivity$Search = {
       requestBody: {
         viewId: this.privateSettings.view_id,
         user: {
-          type: "CLIENT_ID",
+          type: userIdType,
           userId,
         },
         dateRange: {
@@ -38,10 +46,34 @@ export class ServiceClient {
           startDate: startDate.toFormat("yyyy-MM-dd"),
         },
       },
+    };
+
+    const auth = new google.auth.GoogleAuth({
+      keyFile: `./temp/${this.connectorId}.auth.json`,
+      scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
     });
 
-    this.logger.debug("Retrieved data from user activity search", result.data);
-    return result.data;
+    google.options({ auth });
+
+    try {
+      const response = await google
+        .analyticsreporting("v4")
+        .userActivity.search(payload);
+
+      this.logger.debug(
+        "Retrieved data from user activity search",
+        response.data,
+      );
+
+      return ApiUtil.handleApiResultSuccess(url, method, payload, response);
+    } catch (error) {
+      return ApiUtil.handleApiResultError(
+        url,
+        method,
+        payload,
+        error as GaxiosError,
+      );
+    }
   }
 
   public async listCustomDimensions(

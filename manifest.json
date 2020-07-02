@@ -66,6 +66,13 @@
           "ALL": "All Users"
         }
       }
+    },
+    {
+      "name": "lookup_attribute_userid",
+      "type": "string",
+      "format": "trait",
+      "title": "Lookup attribute (User ID)",
+      "description": "Select the attribute which contains the User ID or IDs, if any."
     }
   ],
   "json": [],
@@ -75,7 +82,22 @@
     "value": "30"
   }],
   "subscriptions": [{
-    "url": "/smart-notifier"
+    "url": "/smart-notifier",
+    "conditions": {
+      "channels": {
+        "only": [
+          "user:update",
+          "ship:update",
+          "users_segment:update",
+          "segment:update"
+        ]
+      },
+      "segments": {
+        "user:update": [
+          "private_settings.user_synchronized_segments"
+        ]
+      }
+    }
   }],
   "settings_sections": [{
       "title": "Authentication",
@@ -94,7 +116,8 @@
         "private_settings.user_synchronized_segments",
         "private_settings.lookup_anonymous_ids_enabled",
         "private_settings.lookup_anonymous_ids_prefix",
-        "private_settings.lookup_attribute"
+        "private_settings.lookup_attribute",
+        "private_settings.lookup_attribute_userid"
       ]
     }
   ]

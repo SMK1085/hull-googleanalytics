@@ -17,9 +17,7 @@ import {
   VALIDATION_SKIP_HULLUSER_RECENTUAS,
 } from "./messages";
 import asyncForEach from "../utils/async-foreach";
-import path from "path";
 import { isDirAsync, mkDirAsync, saveFileToDisk } from "../utils/filesystem";
-import { writeFile } from "fs";
 import { ConnectorRedisClient } from "../utils/redis-client";
 import { DateTime } from "luxon";
 
@@ -150,7 +148,7 @@ export class SyncAgent {
           );
 
           let isSkippedRecentSearch = false;
-          if (lastUserActivitySearch) {
+          if (lastUserActivitySearch && isBatch === false) {
             if (
               DateTime.fromISO(lastUserActivitySearch) >=
               DateTime.utc().minus({ minutes: 30 })
@@ -219,19 +217,74 @@ export class SyncAgent {
                   (envelope.serviceObject as GoogleAnalyticsUserActivityRequestData)
                     .endDate,
                 );
-                const mappedEvents = mappingUtil.mapAnalyticsAcitivityResponseDataToHullEvents(
-                  result,
-                );
-                console.log(mappedEvents);
+                if (result.success && result.data) {
+                  const mappedEvents = mappingUtil.mapAnalyticsAcitivityResponseDataToHullEvents(
+                    result.data,
+                  );
 
-                const eventPromises = _.map(mappedEvents, (me) => {
-                  return this.hullClient
+                  const eventPromises = _.map(mappedEvents, (me) => {
+                    return this.hullClient
+                      .asUser(envelope.message.user)
+                      .track(me.event, me.properties, me.context);
+                  });
+
+                  const ingestionResult = await Promise.all(eventPromises);
+                  logger.debug(
+                    `Successfully retrieved events for CLIENT_ID '${cid}'.`,
+                    { ingestionResult },
+                  );
+                } else if (result.success === false) {
+                  logger.error(
+                    `Failed to retrieve user activity for CLIENT_ID '${cid}'`,
+                    { error: result.error, details: result.errorDetails },
+                  );
+                  this.hullClient
                     .asUser(envelope.message.user)
-                    .track(me.event, me.properties, me.context);
-                });
+                    .logger.error("outgoing.user.error", {
+                      details: result.error,
+                    });
+                }
+              },
+            );
 
-                const ingestionResult = await Promise.all(eventPromises);
-                console.log(ingestionResult);
+            await asyncForEach(
+              envelope.serviceObject.userIdentifiers,
+              async (cid: string) => {
+                const result = await serviceClient.fetchGoogleAnalyticsReport(
+                  cid,
+                  (envelope.serviceObject as GoogleAnalyticsUserActivityRequestData)
+                    .startDate,
+                  (envelope.serviceObject as GoogleAnalyticsUserActivityRequestData)
+                    .endDate,
+                  "USER_ID",
+                );
+                if (result.success && result.data) {
+                  const mappedEvents = mappingUtil.mapAnalyticsAcitivityResponseDataToHullEvents(
+                    result.data,
+                  );
+
+                  const eventPromises = _.map(mappedEvents, (me) => {
+                    return this.hullClient
+                      .asUser(envelope.message.user)
+                      .track(me.event, me.properties, me.context);
+                  });
+
+                  const ingestionResult = await Promise.all(eventPromises);
+                  logger.debug(
+                    `Successfully retrieved events for USER_ID '${cid}'.`,
+                    { ingestionResult },
+                  );
+                } else if (result.success === false) {
+                  logger.error(
+                    `Failed to retrieve user activity for USER_ID '${cid}'`,
+                    { error: result.error, details: result.errorDetails },
+                  );
+                  this.hullClient
+                    .asUser(envelope.message.user)
+                    .logger.error("outgoing.user.error", {
+                      details: result.error,
+                    });
+                }
               },
             );
 
@@ -275,13 +328,13 @@ export class SyncAgent {
         );
 
         const customDimensions = await serviceClient.listProfiles(
-          "34606920",
-          "UA-34606920-1",
+          this.privateSettings.account_id,
+          this.privateSettings.webproperty_id,
         );
-        logger.debug("Retrieved profiles", customDimensions);
+        logger.debug("Retrieved profile user links", customDimensions);
       } catch (error) {
         console.log(error);
-        logger.error("Failed to retrieve profiles", { error });
+        logger.error("Failed to retrieve profile user links", { error });
       }
     }
 
