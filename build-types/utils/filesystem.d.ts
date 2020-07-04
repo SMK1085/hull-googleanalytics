@@ -5,4 +5,6 @@ export declare const mkDirAsync: (path: string) => Promise<void>;
 export declare const pathExists: (path: string) => boolean;
 export declare const pathExistsAsync: (path: string) => Promise<boolean>;
 export declare const readJsonFromDisk: (path: string, encoding?: string) => Promise<any>;
+export declare const readStringFromDisk: (path: string, encoding?: string) => Promise<string>;
 export declare const saveFileToDisk: (path: string, content: any) => Promise<boolean>;
+export declare const deleteFileFromDisk: (path: string) => Promise<unknown>;

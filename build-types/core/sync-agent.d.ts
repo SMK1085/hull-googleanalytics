@@ -19,6 +19,7 @@ export declare class SyncAgent {
      * @memberof SyncAgent
      */
     sendUserMessages(messages: IHullUserUpdateMessage[], isBatch?: boolean): Promise<unknown>;
+    processUserExplorerExportFiles(): Promise<unknown>;
     /**
      * Determines the overall status of the connector.
      *
