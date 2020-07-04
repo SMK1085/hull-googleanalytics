@@ -37,3 +37,9 @@ export interface ApiResultObject<T, U> {
   error?: string | string[];
   errorDetails?: GaxiosError;
 }
+
+export interface GoogleAnalyticsInboundParseFileInfo {
+  path: string;
+  name: string;
+  type: string;
+}

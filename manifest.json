@@ -73,6 +73,13 @@
       "format": "trait",
       "title": "Lookup attribute (User ID)",
       "description": "Select the attribute which contains the User ID or IDs, if any."
+    },
+    {
+      "name": "enable_inboundparse",
+      "type": "boolean",
+      "title": "Process email exports from User Explorer?",
+      "description": "Use this setting to enable processing of email exports.",
+      "default": false
     }
   ],
   "json": [],
@@ -118,6 +125,13 @@
         "private_settings.lookup_anonymous_ids_prefix",
         "private_settings.lookup_attribute",
         "private_settings.lookup_attribute_userid"
+      ]
+    },
+    {
+      "title": "Automation",
+      "description": "Setup email exports from User Explorer to obtain Client IDs.",
+      "properties": [
+        "private_settings.enable_inboundparse"
       ]
     }
   ]

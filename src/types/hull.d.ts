@@ -1,5 +1,4 @@
 /* eslint-disable max-classes-per-file, @typescript-eslint/no-explicit-any */
-
 declare module "hull" {
   import { Logger, loggers } from "winston";
   import { Application } from "express";
@@ -12,6 +11,10 @@ declare module "hull" {
     public setupApp(app: Application): void;
 
     public startApp(app: Application): void;
+  }
+
+  export default class HullClient {
+    constructor(config: any);
   }
 }
 

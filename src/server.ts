@@ -122,6 +122,9 @@ export const server = (app: Application): Application => {
   app.use("/status", actions.status(container));
   // app.use("/auth/status", cors(), actions.authStatusFactory(container));
 
+  // User Explorer Email Export endpoint
+  app.post("/sendgrid/inboundparse", actions.userExplorerExport(container));
+
   // Dispose the container when the server closes
   app.on("close", () => {
     globalLogger.debug("Shutting down application on CLOSE...");

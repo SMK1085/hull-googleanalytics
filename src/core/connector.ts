@@ -8,4 +8,5 @@ export interface PrivateSettings {
   user_synchronized_segments: string[];
   account_id?: string | null;
   webproperty_id?: string | null;
+  enable_inboundparse?: boolean;
 }

@@ -1,4 +1,6 @@
 import fs from "fs";
+import { reject } from "lodash";
+import { resolve } from "path";
 
 export const isDir = (path: string): boolean => {
   try {
@@ -61,6 +63,22 @@ export const readJsonFromDisk = (
   });
 };
 
+export const readStringFromDisk = (
+  path: string,
+  encoding = "utf-8",
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    fs.readFile(path, encoding, (err, data) => {
+      if (err) {
+        console.error(err);
+        return reject(err);
+      }
+
+      return resolve(data);
+    });
+  });
+};
+
 export const saveFileToDisk = (
   path: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,6 +87,19 @@ export const saveFileToDisk = (
   return new Promise((resolve) => {
     fs.writeFile(path, content, () => {
       resolve(true);
+    });
+  });
+};
+
+export const deleteFileFromDisk = (path: string): Promise<unknown> => {
+  return new Promise((resolve, reject) => {
+    fs.unlink(path, (err) => {
+      if (err) {
+        console.error(err);
+        return reject(err);
+      }
+
+      return resolve(true);
     });
   });
 };

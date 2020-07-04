@@ -11,15 +11,24 @@ import { MappingUtil } from "../utils/mapping-util";
 import {
   OutgoingOperationEnvelope,
   GoogleAnalyticsUserActivityRequestData,
+  GoogleAnalyticsInboundParseFileInfo,
 } from "./service-objects";
 import {
   VALIDATION_SKIP_HULLUSER_NOCLIENTIDS,
   VALIDATION_SKIP_HULLUSER_RECENTUAS,
 } from "./messages";
 import asyncForEach from "../utils/async-foreach";
-import { isDirAsync, mkDirAsync, saveFileToDisk } from "../utils/filesystem";
+import {
+  isDirAsync,
+  mkDirAsync,
+  saveFileToDisk,
+  pathExistsAsync,
+  readStringFromDisk,
+  deleteFileFromDisk,
+} from "../utils/filesystem";
 import { ConnectorRedisClient } from "../utils/redis-client";
 import { DateTime } from "luxon";
+import csv from "csvtojson";
 
 export class SyncAgent {
   readonly hullClient: IHullClient;
@@ -109,9 +118,6 @@ export class SyncAgent {
 
       if (envelopesFiltered.enrichs.length === 0) {
         logger.debug(
-          `No messages containing user profiles to enrich from Google Analytics. Skipping further processing.`,
-        );
-        console.log(
           `No messages containing user profiles to enrich from Google Analytics. Skipping further processing.`,
         );
         return Promise.resolve(true);
@@ -303,6 +309,152 @@ export class SyncAgent {
 
     return Promise.resolve(true);
   }
+
+  public async processUserExplorerExportFiles(): Promise<unknown> {
+    const logger = this.diContainer.resolve<Logger>("logger");
+    if (this.privateSettings.enable_inboundparse !== true) {
+      logger.debug(
+        `Connector with id '${this.hullConnector.id}' doesn't have inbound parsing enabled. Skipping processing.`,
+      );
+      return Promise.resolve(false);
+    }
+
+    const redisClient = this.diContainer.resolve<ConnectorRedisClient>(
+      "redisClient",
+    );
+    const fileInfos = await redisClient.get<
+      GoogleAnalyticsInboundParseFileInfo[]
+    >(`${this.hullConnector.id}__inboundparse_files`);
+
+    if (_.isNil(fileInfos)) {
+      logger.debug(
+        `Connector with id '${this.hullConnector.id}' doesn't have any pending jobs stored in Redis. Skipping processing.`,
+      );
+      return Promise.resolve(true);
+    }
+
+    const serviceClient = this.diContainer.resolve<ServiceClient>(
+      "serviceClient",
+    );
+    const mappingUtil = this.diContainer.resolve<MappingUtil>("mappingUtil");
+
+    let hasErrors = false;
+
+    try {
+      await asyncForEach(
+        fileInfos,
+        async (fileInfo: GoogleAnalyticsInboundParseFileInfo) => {
+          const fileExists = await pathExistsAsync(fileInfo.path);
+          if (fileExists === true && fileInfo.type === "text/csv") {
+            let csvContent = await readStringFromDisk(fileInfo.path);
+            csvContent = csvContent
+              .replace(/^#.*\n?/gm, "")
+              .replace(/^\s*[\r\n]/gm, "");
+
+            const rawData = await csv().fromString(csvContent);
+
+            await asyncForEach(rawData, async (raw: any) => {
+              logger.debug("Raw line", raw);
+              let clientId = _.get(raw, "Client Id", undefined);
+              let clientIdArtificial: string | undefined = undefined;
+              if (clientId && !_.startsWith(clientId, "GA")) {
+                clientIdArtificial = `GA1.2.${clientId}`;
+              }
+
+              if (clientId) {
+                const now = DateTime.utc();
+                const result = await serviceClient.fetchGoogleAnalyticsReport(
+                  clientId,
+                  now.minus({ days: 2 }),
+                  now,
+                  "CLIENT_ID",
+                );
+                if (result.success && result.data) {
+                  const mappedEvents = mappingUtil.mapAnalyticsAcitivityResponseDataToHullEvents(
+                    result.data,
+                  );
+
+                  const eventPromises = _.map(mappedEvents, (me) => {
+                    return this.hullClient
+                      .asUser({ anonymous_id: `ga:${clientId}` })
+                      .track(me.event, me.properties, me.context);
+                  });
+
+                  const ingestionResult = await Promise.all(eventPromises);
+                  logger.debug(
+                    `Successfully retrieved events for CLIENT_ID '${clientId}'.`,
+                    { ingestionResult },
+                  );
+                } else if (result.success === false) {
+                  hasErrors = true;
+                  logger.error(
+                    `Failed to retrieve user activity for CLIENT_ID '${clientId}'`,
+                    { error: result.error, details: result.errorDetails },
+                  );
+                  this.hullClient
+                    .asUser({ anonymous_id: `ga:${clientId}` })
+                    .logger.error("incoming.user.error", {
+                      details: result.error,
+                    });
+                }
+              } else {
+                logger.debug(`Couldn't find 'Client Id' in CSV data`, {
+                  rawData: raw,
+                });
+              }
+            });
+          } else if (fileExists === true) {
+            logger.debug(
+              `File ${fileInfo.path} is not a CSV file but of type '${fileInfo.type}'. Skipping processing.`,
+            );
+          } else {
+            logger.debug(
+              `File '${fileInfo.path}' doesn't exist, skipping processing.`,
+            );
+          }
+        },
+      );
+    } catch (error) {
+      hasErrors = true;
+      logger.error("Failed to process files", { details: error });
+    }
+
+    if (hasErrors) {
+      return Promise.resolve(false);
+    }
+
+    const delResult = await redisClient.delete(
+      `${this.hullConnector.id}__inboundparse_files`,
+    );
+    logger.debug(
+      `Removed pending jobs from Redis with result: ${delResult} deleted`,
+    );
+
+    try {
+      await asyncForEach(
+        fileInfos,
+        async (fileInfo: GoogleAnalyticsInboundParseFileInfo) => {
+          logger.debug(
+            `Attempting to remove file '${fileInfo.path}' from disk...`,
+          );
+          await deleteFileFromDisk(fileInfo.path);
+          logger.debug(
+            `Successfully removed file '${fileInfo.path}' from disk.`,
+          );
+        },
+      );
+
+      logger.debug(`Successfully cleanded up files for connector.`);
+    } catch (error) {
+      logger.error(
+        `Failed to clean up files from disk for connector with id '${this.hullConnector.id}'.`,
+        { details: error },
+      );
+    }
+
+    return Promise.resolve(true);
+  }
+
   /**
    * Determines the overall status of the connector.
    *
@@ -323,18 +475,27 @@ export class SyncAgent {
       try {
         await this.ensureKeyFile();
 
-        const serviceClient = this.diContainer.resolve<ServiceClient>(
-          "serviceClient",
-        );
-
-        const customDimensions = await serviceClient.listProfiles(
-          this.privateSettings.account_id,
-          this.privateSettings.webproperty_id,
-        );
-        logger.debug("Retrieved profile user links", customDimensions);
+        if (this.privateSettings.enable_inboundparse === true) {
+          const redisClient = this.diContainer.resolve<ConnectorRedisClient>(
+            "redisClient",
+          );
+          const connectorConfig = (this.hullClient as any).configuration();
+          // Ensure we have the necessary stuff in Redis
+          const redisResult = await redisClient.set(
+            `${this.hullConnector.id}__inboundparse`,
+            {
+              id: connectorConfig.id,
+              secret: connectorConfig.secret,
+              organization: connectorConfig.organization,
+            },
+            60 * 35,
+          );
+          logger.debug(
+            `Stored inbound parse config for connector with id '${this.hullConnector.id}': ${redisResult}`,
+          );
+        }
       } catch (error) {
-        console.log(error);
-        logger.error("Failed to retrieve profile user links", { error });
+        logger.error("Failed to ensure status being propagated", { error });
       }
     }
 
