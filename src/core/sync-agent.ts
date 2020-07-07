@@ -468,10 +468,7 @@ export class SyncAgent {
     };
 
     const logger = this.diContainer.resolve<Logger>("logger");
-    if (
-      this.privateSettings.account_id &&
-      this.privateSettings.webproperty_id
-    ) {
+    if (this.privateSettings.webproperty_id) {
       try {
         await this.ensureKeyFile();
 
