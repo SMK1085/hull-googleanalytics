@@ -12,6 +12,8 @@ import {
   OutgoingOperationEnvelope,
   GoogleAnalyticsUserActivityRequestData,
   GoogleAnalyticsInboundParseFileInfo,
+  GoogleAnalyticsMetadataType,
+  PeriodicReportType,
 } from "./service-objects";
 import {
   VALIDATION_SKIP_HULLUSER_NOCLIENTIDS,
@@ -29,6 +31,12 @@ import {
 import { ConnectorRedisClient } from "../utils/redis-client";
 import { DateTime } from "luxon";
 import csv from "csvtojson";
+import { analytics_v3, analyticsreporting_v4 } from "googleapis";
+import { CachingUtil } from "../utils/caching-util";
+import { response } from "express";
+import { FieldsSchema } from "../types/fields-schema";
+import { IHullUserClaims } from "../types/user";
+import IHullUserEvent from "../types/user-event";
 
 export class SyncAgent {
   readonly hullClient: IHullClient;
@@ -64,6 +72,7 @@ export class SyncAgent {
     // Register the utils
     this.diContainer.register("filterUtil", asClass(FilterUtil));
     this.diContainer.register("mappingUtil", asClass(MappingUtil));
+    this.diContainer.register("cachingUtil", asClass(CachingUtil));
     // Register the service client
     this.diContainer.register("serviceClient", asClass(ServiceClient));
   }
@@ -497,6 +506,425 @@ export class SyncAgent {
     }
 
     return Promise.resolve(statusResult);
+  }
+
+  public async getMetadataFields(
+    metaType: GoogleAnalyticsMetadataType,
+  ): Promise<FieldsSchema> {
+    const logger = this.diContainer.resolve<Logger>("logger");
+    let fieldsSchema: FieldsSchema = {
+      ok: true,
+      error: null,
+      options: [],
+    };
+
+    try {
+      const connectorConfig = (this.hullClient as any).configuration();
+      const serviceClient = this.diContainer.resolve<ServiceClient>(
+        "serviceClient",
+      );
+      const cachingUtil = this.diContainer.resolve<CachingUtil>("cachingUtil");
+      const cacheKeyColumns = CachingUtil.getCacheKey(
+        connectorConfig.id,
+        "columns",
+      );
+      const cacheKeyCustomDims = CachingUtil.getCacheKey(
+        connectorConfig.id,
+        "customdimensions",
+      );
+      switch (metaType) {
+        case "dimensions":
+          const responseColumnsDims = await cachingUtil.getCachedApiResponse(
+            cacheKeyColumns,
+            () => serviceClient.listColumns(),
+            60 * 60,
+          );
+          if (responseColumnsDims.success && responseColumnsDims.data) {
+            if (responseColumnsDims.data.items) {
+              _.forEach(responseColumnsDims.data.items, (item) => {
+                if (
+                  item.attributes &&
+                  item.attributes.type === "DIMENSION" &&
+                  item.attributes.status !== "DEPRECATED" &&
+                  item.id !== "ga:dimensionXX"
+                ) {
+                  if (
+                    item.attributes.minTemplateIndex &&
+                    item.attributes.maxTemplateIndex
+                  ) {
+                    for (
+                      let index = 1;
+                      index <= parseInt(item.attributes.maxTemplateIndex, 10);
+                      index++
+                    ) {
+                      fieldsSchema.options.push({
+                        label: `${item.attributes.uiName.replace(
+                          "XX",
+                          `${index}`,
+                        )} [ ${(item.id as string).replace(
+                          "XX",
+                          `${index}`,
+                        )} ]`,
+                        value: (item.id as string).replace("XX", `${index}`),
+                      });
+                    }
+                  } else {
+                    fieldsSchema.options.push({
+                      label: `${item.attributes.uiName} [ ${item.id} ]`,
+                      value: item.id as string,
+                    });
+                  }
+                }
+              });
+            }
+          }
+          const responseCustomDims = await cachingUtil.getCachedApiResponse(
+            cacheKeyCustomDims,
+            () =>
+              serviceClient.listCustomDimensions(
+                this.privateSettings.account_id as string,
+                this.privateSettings.webproperty_id as string,
+              ),
+            60 * 60,
+          );
+          if (responseCustomDims.success && responseCustomDims.data) {
+            if (responseCustomDims.data.items) {
+              _.forEach(responseCustomDims.data.items, (item) => {
+                if (item.active) {
+                  fieldsSchema.options.push({
+                    label: `${item.name} [ ${item.id}]`,
+                    value: item.id as string,
+                  });
+                }
+              });
+            }
+          }
+          break;
+        case "metrics":
+          const responseColumns = await cachingUtil.getCachedApiResponse(
+            cacheKeyColumns,
+            () => serviceClient.listColumns(),
+            60 * 60,
+          );
+          if (responseColumns.success && responseColumns.data) {
+            if (responseColumns.data.items) {
+              _.forEach(responseColumns.data.items, (item) => {
+                if (
+                  item.attributes &&
+                  item.attributes.type === "METRIC" &&
+                  item.attributes.status !== "DEPRECATED"
+                ) {
+                  if (
+                    item.attributes.minTemplateIndex &&
+                    item.attributes.maxTemplateIndex
+                  ) {
+                    for (
+                      let index = 1;
+                      index <= parseInt(item.attributes.maxTemplateIndex, 10);
+                      index++
+                    ) {
+                      fieldsSchema.options.push({
+                        label: `${item.attributes.uiName.replace(
+                          "XX",
+                          `${index}`,
+                        )} [ ${(item.id as string).replace(
+                          "XX",
+                          `${index}`,
+                        )} ]`,
+                        value: (item.id as string).replace("XX", `${index}`),
+                      });
+                    }
+                  } else {
+                    fieldsSchema.options.push({
+                      label: `${item.attributes.uiName} [ ${item.id} ]`,
+                      value: item.id as string,
+                    });
+                  }
+                }
+              });
+            }
+          } else {
+            fieldsSchema.ok = false;
+            fieldsSchema.options = [];
+            if (responseColumns.error) {
+              fieldsSchema.error = _.isArray(responseColumns.error)
+                ? responseColumns.error.join(" ")
+                : responseColumns.error;
+            } else {
+              fieldsSchema.error = "Failed to fetch metadata: Unknown error.";
+            }
+          }
+          break;
+        case "customdimensions":
+          const responseCustomDims1 = await cachingUtil.getCachedApiResponse(
+            cacheKeyCustomDims,
+            () =>
+              serviceClient.listCustomDimensions(
+                this.privateSettings.account_id as string,
+                this.privateSettings.webproperty_id as string,
+              ),
+            60 * 60,
+          );
+          if (responseCustomDims1.success && responseCustomDims1.data) {
+            if (responseCustomDims1.data.items) {
+              _.forEach(responseCustomDims1.data.items, (item) => {
+                if (item.active) {
+                  fieldsSchema.options.push({
+                    label: `${item.name} [ ${item.id}]`,
+                    value: item.id as string,
+                  });
+                }
+              });
+            }
+          }
+          break;
+        default:
+          logger.warn(
+            `Unknown metadata for type '${metaType}' requested by connector with id '${this.hullConnector.id}'.`,
+          );
+          break;
+      }
+    } catch (error) {
+      fieldsSchema.ok = false;
+      fieldsSchema.options = [];
+      fieldsSchema.error = `Failed to fetch metadata: '${error.message}'`;
+    } finally {
+      return fieldsSchema;
+    }
+  }
+
+  public async executePeriodicReport(
+    reportType: PeriodicReportType,
+  ): Promise<unknown> {
+    const logger = this.diContainer.resolve<Logger>("logger");
+
+    if (
+      this.privateSettings.periodic_report_enabled !== true &&
+      reportType === "schedule"
+    ) {
+      logger.debug(
+        `Periodic reporting not enabled for connector with id '${this.hullConnector.id}'. Skipping...`,
+      );
+      return Promise.resolve(true);
+    }
+
+    if (
+      !this.privateSettings.periodic_report_metrics ||
+      this.privateSettings.periodic_report_metrics.length === 0
+    ) {
+      logger.debug(
+        `Not at least one metric for periodic reporting of connector with id '${this.hullConnector.id}' is selected. Skipping...`,
+      );
+      return Promise.resolve(true);
+    }
+
+    if (
+      this.privateSettings.periodic_report_metrics &&
+      this.privateSettings.periodic_report_metrics.length > 10
+    ) {
+      logger.debug(
+        `More than 10 metrics for periodic reporting of connector with id '${this.hullConnector.id}' are selected. Skipping...`,
+      );
+      return Promise.resolve(true);
+    }
+
+    if (
+      !this.privateSettings.periodic_report_dimensions ||
+      this.privateSettings.periodic_report_dimensions.length === 0
+    ) {
+      logger.debug(
+        `Not at least one dimension for periodic reporting of connector with id '${this.hullConnector.id}' is selected. Skipping...`,
+      );
+      return Promise.resolve(true);
+    }
+
+    if (!this.privateSettings.periodic_report_anoid) {
+      logger.debug(
+        `No dimension to use as anonymous_id for periodic reporting of connector with id '${this.hullConnector.id}' is selected. Skipping...`,
+      );
+      return Promise.resolve(true);
+    }
+
+    if (
+      this.privateSettings.periodic_report_anoid &&
+      !this.privateSettings.periodic_report_dimensions.includes(
+        this.privateSettings.periodic_report_anoid,
+      )
+    ) {
+      logger.debug(
+        `The dimension to use as anonymous_id for periodic reporting of connector with id '${this.hullConnector.id}' is not included in the selected dimensions. Skipping...`,
+        {
+          dimensions_selected: this.privateSettings.periodic_report_dimensions,
+          dimension_anonymous_id: this.privateSettings.periodic_report_anoid,
+        },
+      );
+      return Promise.resolve(true);
+    }
+
+    try {
+      const serviceClient = this.diContainer.resolve<ServiceClient>(
+        "serviceClient",
+      );
+
+      const now = DateTime.utc();
+
+      let dimensionFilters = undefined;
+      if (
+        this.privateSettings.periodic_report_anoid_filters &&
+        this.privateSettings.periodic_report_anoid_filters.length !== 0
+      ) {
+        const dimFilter: analyticsreporting_v4.Schema$DimensionFilterClause[] = [
+          {
+            filters: [],
+          },
+        ];
+
+        _.forEach(
+          this.privateSettings.periodic_report_anoid_filters,
+          (filter) => {
+            if (filter.operator === "IS_MISSING" && filter.logical) {
+              const gaFilter = MappingUtil.mapDimensionFilterToGoogleAnalytics(
+                this.privateSettings.periodic_report_anoid as string,
+                filter,
+              );
+              (dimFilter[0].filters as any).push(gaFilter);
+            }
+          },
+        );
+
+        if ((dimFilter[0].filters as any).length > 0) {
+          dimensionFilters = dimFilter;
+        }
+      }
+
+      const dateRange = {
+        startDate: now.minus({ days: 1 }).toFormat("yyyy-MM-dd"),
+        endDate: now.toFormat("yyyy-MM-dd"),
+      };
+
+      const initialReportResponse = await serviceClient.runReport(
+        this.privateSettings.view_id as string,
+        this.privateSettings.periodic_report_dimensions.map((dim) => {
+          return {
+            name: dim,
+          };
+        }),
+        dimensionFilters,
+        this.privateSettings.periodic_report_metrics.map((met) => {
+          return {
+            expression: met,
+          };
+        }),
+        dateRange,
+      );
+
+      if (!initialReportResponse.success || !initialReportResponse.data) {
+        logger.debug(`No initial report response. Skipping...`, {
+          details: initialReportResponse,
+        });
+        return Promise.resolve(true);
+      }
+
+      const mappingUtil = this.diContainer.resolve<MappingUtil>("mappingUtil");
+
+      if (
+        initialReportResponse.data.reports &&
+        initialReportResponse.data.reports[0].data
+      ) {
+        const initialEvents = mappingUtil.mapAnalyticsRowsToHullEvents(
+          dateRange,
+          initialReportResponse.data.reports[0].data.rows,
+        );
+
+        await asyncForEach(
+          initialEvents,
+          async (evt: {
+            userIdent: IHullUserClaims;
+            event: IHullUserEvent;
+          }) => {
+            logger.debug(`Sending event to Hull from Period Report Data`, {
+              data: evt,
+            });
+            await this.hullClient
+              .asUser(evt.userIdent)
+              .track(evt.event.event, evt.event.properties, evt.event.context);
+          },
+        );
+      }
+
+      let pageToken = initialReportResponse.data.reports
+        ? initialReportResponse.data.reports[0].nextPageToken
+        : undefined;
+      while (pageToken) {
+        const consecutiveReportResponse = await serviceClient.runReport(
+          this.privateSettings.view_id as string,
+          this.privateSettings.periodic_report_dimensions.map((dim) => {
+            return {
+              name: dim,
+            };
+          }),
+          dimensionFilters,
+          this.privateSettings.periodic_report_metrics.map((met) => {
+            return {
+              expression: met,
+            };
+          }),
+          dateRange,
+          pageToken,
+        );
+
+        if (
+          consecutiveReportResponse.success &&
+          consecutiveReportResponse.data
+        ) {
+          if (
+            consecutiveReportResponse.data.reports &&
+            consecutiveReportResponse.data.reports[0].data
+          ) {
+            const consecutiveEvents = mappingUtil.mapAnalyticsRowsToHullEvents(
+              dateRange,
+              consecutiveReportResponse.data.reports[0].data.rows,
+            );
+
+            await asyncForEach(
+              consecutiveEvents,
+              async (evt: {
+                userIdent: IHullUserClaims;
+                event: IHullUserEvent;
+              }) => {
+                logger.debug(`Sending event to Hull from Period Report Data`, {
+                  data: evt,
+                });
+                await this.hullClient
+                  .asUser(evt.userIdent)
+                  .track(
+                    evt.event.event,
+                    evt.event.properties,
+                    evt.event.context,
+                  );
+              },
+            );
+
+            pageToken = consecutiveReportResponse.data.reports[0].nextPageToken;
+          }
+        } else {
+          logger.error(
+            `Failed to execute period report with page token '${pageToken}' for connector with id '${this.hullConnector.id}'.`,
+            {
+              error: consecutiveReportResponse.error,
+              errorDetails: consecutiveReportResponse.errorDetails,
+            },
+          );
+          pageToken = undefined;
+        }
+      }
+    } catch (error) {
+      logger.error(
+        `Failed to process periodic report for connector with id '${this.hullConnector.id}'.`,
+        { error },
+      );
+      return Promise.resolve(false);
+    }
   }
 
   private async ensureKeyFile(): Promise<boolean> {

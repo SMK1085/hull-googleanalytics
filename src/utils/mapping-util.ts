@@ -1,7 +1,10 @@
 import { PrivateSettings } from "../core/connector";
 import { Logger } from "winston";
-import { GoogleAnalyticsUserActivityRequestData } from "../core/service-objects";
-import IHullUser from "../types/user";
+import {
+  GoogleAnalyticsUserActivityRequestData,
+  GoogleAnalyticsDimensionFilter,
+} from "../core/service-objects";
+import IHullUser, { IHullUserClaims } from "../types/user";
 import { DateTime } from "luxon";
 import { analyticsreporting_v4 } from "googleapis";
 import IHullUserEvent from "../types/user-event";
@@ -15,6 +18,7 @@ import {
   get,
   isArray,
   isString,
+  isNil,
 } from "lodash";
 
 export class MappingUtil {
@@ -201,6 +205,97 @@ export class MappingUtil {
         }
       });
     }
+
+    return result;
+  }
+
+  public static mapDimensionFilterToGoogleAnalytics(
+    dimensionId: string,
+    filter: GoogleAnalyticsDimensionFilter,
+  ): analyticsreporting_v4.Schema$DimensionFilter {
+    const result: analyticsreporting_v4.Schema$DimensionFilter = {
+      dimensionName: dimensionId,
+      not: filter.logical === "IS NOT" ? true : false,
+      expressions: [filter.comparisonValue as string],
+      operator: filter.operator,
+    };
+
+    return result;
+  }
+
+  public mapAnalyticsRowsToHullEvents(
+    timeframe: analyticsreporting_v4.Schema$DateRange,
+    rows: analyticsreporting_v4.Schema$ReportRow[] | undefined,
+  ): { event: IHullUserEvent; userIdent: IHullUserClaims }[] {
+    const result: { event: IHullUserEvent; userIdent: IHullUserClaims }[] = [];
+
+    if (
+      rows === undefined ||
+      isNil(this.privateSettings.periodic_report_dimensions)
+    ) {
+      return result;
+    }
+
+    const indexIdentifierDimension = this.privateSettings.periodic_report_dimensions.findIndex(
+      (dim) => {
+        return dim === this.privateSettings.periodic_report_anoid;
+      },
+    );
+
+    rows.forEach((row) => {
+      if (!isNil(row.dimensions) && !isNil(row.metrics)) {
+        const res: { event: IHullUserEvent; userIdent: IHullUserClaims } = {
+          userIdent: {
+            anonymous_id: `ga:${row.dimensions[indexIdentifierDimension]}`,
+          },
+          event: {
+            event: "Google Analytics Reporting Data updated",
+            context: {
+              event_id: `ga-${this.privateSettings.view_id}-${row.dimensions[indexIdentifierDimension]}-${timeframe.endDate}`,
+              source: "google-analytics",
+              type: "track",
+              created_at: DateTime.fromFormat(
+                timeframe.endDate as string,
+                "yyyy-MM-dd",
+              ).toISO(),
+            },
+            properties: {},
+            created_at: DateTime.fromFormat(
+              timeframe.endDate as string,
+              "yyyy-MM-dd",
+            ).toISO(),
+          },
+        };
+
+        (this.privateSettings.periodic_report_dimensions as string[]).forEach(
+          (dim, i) => {
+            if ((row.dimensions as string[]).length > i) {
+              set(
+                res,
+                `event.properties.dimension__${snakeCase(dim)}`,
+                (row.dimensions as string[])[i],
+              );
+            }
+          },
+        );
+
+        (this.privateSettings.periodic_report_metrics as string[]).forEach(
+          (met, i) => {
+            if (row.metrics && row.metrics[0]) {
+              if ((row.metrics[0].values as string[]).length > i) {
+                set(
+                  res,
+                  `event.properties.metric__${snakeCase(met)}`,
+                  (row.metrics[0].values as string[])[i],
+                );
+              }
+            }
+          },
+        );
+
+        result.push(res);
+      }
+    });
 
     return result;
   }

@@ -80,13 +80,137 @@
       "title": "Process email exports from User Explorer?",
       "description": "Use this setting to enable processing of email exports.",
       "default": false
+    },
+    {
+      "name": "periodic_report_metrics",
+      "title": "Metrics",
+      "description": "Reports can have a total of 9 dimensions.",
+      "type": "array",
+      "format": "select",
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "options": {
+        "loadOptions": "meta/fields/metrics",
+        "allowCreate": false
+      }
+    },
+    {
+      "name": "periodic_report_dimensions",
+      "title": "Dimensions",
+      "description": "Reports must specify at least one metric. Reports can have a total of 10 metrics.",
+      "type": "array",
+      "format": "select",
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "options": {
+        "loadOptions": "meta/fields/dimensions",
+        "allowCreate": false
+      }
+    },
+    {
+      "name": "periodic_report_anoid",
+      "title": "Identifying Custom Dimension",
+      "description": "Pick the custom dimension which contains a user's identity. Read more in the docs.",
+      "type": "string",
+      "format": "select",
+      "options": {
+        "loadOptions": "meta/fields/customdimensions",
+        "allowCreate": false
+      }
+    },
+    {
+      "name": "periodic_report_enabled",
+      "title": "Activate Schedule",
+      "description": "Run periodic reports on the `Scheduled Interval` defined below.",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "name": "periodic_report_interval",
+      "title": "Scheduled Interval",
+      "description": "The scheduler interval in minutes.",
+      "type": "string",
+      "format": "select",
+      "enum": [
+        "60",
+        "120",
+        "180",
+        "240",
+        "360",
+        "720",
+        "1440"
+      ],
+      "default": "180"
+    },
+    {
+      "name": "periodic_report_anoid_filters",
+      "title": "Identifying Custom Dimension Filter",
+      "description": "Configure filters to exclude users from being imported into Hull. These are combined with `AND`.",
+      "type": "array",
+      "format": "table",
+      "items": {
+        "type": "object",
+        "properties": {
+          "logical": {
+            "type": "string",
+            "title": "Logical",
+            "format": "select",
+            "enum": [
+              "IS",
+              "IS NOT"
+            ],
+            "default": "IS"
+          },
+          "operator": {
+            "type": "string",
+            "title": "Operator",
+            "format": "select",
+            "enum": [
+              "EQUAL",
+              "LESS_THAN",
+              "GREATER_THAN",
+              "IS_MISSING"
+            ],
+            "default": "EQUAL"
+          },
+          "comparisonValue": {
+            "type": "string",
+            "title": "Comparison Value"
+          }
+        }
+      },
+      "default": []
     }
   ],
-  "json": [],
+  "json": [{
+    "title": "Run report",
+    "name": "periodic_report_run_manual",
+    "format": "button",
+    "url": "/report/periodic/manual",
+    "handler": "periodReport",
+    "options": {
+      "fireAndForget": true,
+      "confirm": {
+        "action": "fetch",
+        "text": "You are about to run a manual report on Google Analytics. Be careful when clicking this multiple times, it can result in long operations. Check out the \"Logs\" tab to track `incoming.event.success` messages as data is ingested.",
+        "button": "Start Fetching Report Data",
+        "entity": "events"
+      }
+    }
+  }],
   "schedules": [{
     "url": "/status",
     "type": "interval",
     "value": "30"
+  }, {
+    "url": "/report/periodic/schedule",
+    "type": "interval",
+    "value_from": "private_settings.periodic_report_interval",
+    "default": "180"
   }],
   "subscriptions": [{
     "url": "/smart-notifier",
@@ -132,6 +256,19 @@
       "description": "Setup email exports from User Explorer to obtain Client IDs.",
       "properties": [
         "private_settings.enable_inboundparse"
+      ]
+    },
+    {
+      "title": "Periodic Report",
+      "description": "Setup a periodic user-related report to fetch.",
+      "properties": [
+        "private_settings.periodic_report_enabled",
+        "private_settings.periodic_report_interval",
+        "private_settings.periodic_report_dimensions",
+        "private_settings.periodic_report_metrics",
+        "private_settings.periodic_report_anoid",
+        "private_settings.periodic_report_anoid_filters",
+        "json.periodic_report_run_manual"
       ]
     }
   ]

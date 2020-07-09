@@ -1,3 +1,5 @@
+import { GoogleAnalyticsDimensionFilter } from "./service-objects";
+
 export interface PrivateSettings {
   json_key: string;
   view_id?: string | null;
@@ -9,4 +11,10 @@ export interface PrivateSettings {
   account_id?: string | null;
   webproperty_id?: string | null;
   enable_inboundparse?: boolean;
+  periodic_report_enabled?: boolean | null;
+  periodic_report_interval?: string | null;
+  periodic_report_dimensions?: string[] | null;
+  periodic_report_metrics?: string[] | null;
+  periodic_report_anoid?: string | null;
+  periodic_report_anoid_filters?: GoogleAnalyticsDimensionFilter[] | null;
 }

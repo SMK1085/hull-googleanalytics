@@ -109,8 +109,8 @@ export const server = (app: Application): Application => {
   );
 
   // CORS enabled endpoints
-  // app.use("/meta/fields/:type", cors(), actions.metaFields(container));
-  // app.use("/fetch/:type/:jobType", cors(), actions.fetch(container));
+  app.use("/meta/fields/:type", cors(), actions.metaFields(container));
+  app.use("/report/periodic/:type", cors(), actions.periodicReport(container));
 
   // OAuth handler endpoints
   //app.get("/auth", actions.authInitializerFactory(container));

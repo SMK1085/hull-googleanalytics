@@ -28,6 +28,11 @@ export type GoogleAnalyticsUserIdType = "CLIENT_ID" | "USER_ID";
 
 export type ApiMethod = "query";
 
+export type GoogleAnalyticsMetadataType =
+  | "dimensions"
+  | "metrics"
+  | "customdimensions";
+
 export interface ApiResultObject<T, U> {
   endpoint: string;
   method: ApiMethod;
@@ -43,3 +48,24 @@ export interface GoogleAnalyticsInboundParseFileInfo {
   name: string;
   type: string;
 }
+
+export type CacheScenarioType =
+  | "inboundparse"
+  | "inboundparse_files"
+  | "customdimensions"
+  | "uas"
+  | "columns";
+
+export interface GoogleAnalyticsDimensionFilter {
+  logical: "IS" | "IS NOT" | null | undefined;
+  operator:
+    | "EQUAL"
+    | "LESS_THAN"
+    | "GREATER_THAN"
+    | "IS_MISSING"
+    | null
+    | undefined;
+  comparisonValue: string | null | undefined;
+}
+
+export type PeriodicReportType = "schedule" | "manual";
