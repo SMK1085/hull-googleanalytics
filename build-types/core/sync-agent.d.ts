@@ -3,6 +3,8 @@ import { AwilixContainer } from "awilix";
 import { PrivateSettings } from "./connector";
 import { ConnectorStatusResponse } from "../types/connector-status";
 import IHullUserUpdateMessage from "../types/user-update-message";
+import { GoogleAnalyticsMetadataType, PeriodicReportType } from "./service-objects";
+import { FieldsSchema } from "../types/fields-schema";
 export declare class SyncAgent {
     readonly hullClient: IHullClient;
     readonly metricsClient: any;
@@ -27,5 +29,7 @@ export declare class SyncAgent {
      * @memberof SyncAgent
      */
     determineConnectorStatus(): Promise<ConnectorStatusResponse>;
+    getMetadataFields(metaType: GoogleAnalyticsMetadataType): Promise<FieldsSchema>;
+    executePeriodicReport(reportType: PeriodicReportType): Promise<unknown>;
     private ensureKeyFile;
 }

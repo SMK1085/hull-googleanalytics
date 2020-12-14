@@ -108,3 +108,6 @@ dist
 
 #temp files
 temp/
+.idea
+build-types
+*.iml
