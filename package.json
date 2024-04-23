@@ -62,7 +62,7 @@
     "csvtojson": "^2.0.10",
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
-    "formidable": "^1.2.2",
+    "formidable": "^3.2.4",
     "googleapis": "^52.1.0",
     "hull": "^0.13.20",
     "lodash": "^4.17.15",
